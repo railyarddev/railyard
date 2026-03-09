@@ -354,7 +354,45 @@ allowlist:
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// 6. TRACE LOGGING
+// 6. SELF-PROTECTION — Railyard must prevent agents from disabling it
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+fn self_protect_block_uninstall() {
+    let dir = create_policy_dir("version: 1\nblocklist: []");
+    let input = make_bash_input("s1", dir.path().to_str().unwrap(), "railyard uninstall");
+    let (_, stdout) = simulate_hook(&railyard_binary(), "PreToolUse", &input);
+    assert!(output_contains_deny(&stdout), "railyard uninstall should be blocked");
+}
+
+#[test]
+fn self_protect_block_settings_edit() {
+    let dir = create_policy_dir("version: 1\nblocklist: []");
+    let home = dirs::home_dir().unwrap();
+    let settings_path = format!("{}/.claude/settings.json", home.display());
+    let input = make_write_input("s1", dir.path().to_str().unwrap(), &settings_path);
+    let (_, stdout) = simulate_hook(&railyard_binary(), "PreToolUse", &input);
+    assert!(output_contains_deny(&stdout), "writing to .claude/settings.json should be blocked");
+}
+
+#[test]
+fn self_protect_block_settings_via_bash() {
+    let dir = create_policy_dir("version: 1\nblocklist: []");
+    let input = make_bash_input("s1", dir.path().to_str().unwrap(), "sed -i '' 's/railyard//g' ~/.claude/settings.json");
+    let (_, stdout) = simulate_hook(&railyard_binary(), "PreToolUse", &input);
+    assert!(output_contains_deny(&stdout), "sed on .claude/settings.json should be blocked");
+}
+
+#[test]
+fn self_protect_block_remove_binary() {
+    let dir = create_policy_dir("version: 1\nblocklist: []");
+    let input = make_bash_input("s1", dir.path().to_str().unwrap(), "rm ~/.cargo/bin/railyard");
+    let (_, stdout) = simulate_hook(&railyard_binary(), "PreToolUse", &input);
+    assert!(output_contains_deny(&stdout), "removing railyard binary should be blocked");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 7. TRACE LOGGING
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]

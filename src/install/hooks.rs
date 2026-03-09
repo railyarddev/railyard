@@ -74,7 +74,21 @@ pub fn install_hooks() -> Result<String, String> {
 }
 
 /// Remove railyard hooks from Claude Code settings.
+/// Requires explicit human confirmation via a native OS dialog.
 pub fn uninstall_hooks() -> Result<String, String> {
+    // Check if running interactively (a TTY is attached)
+    // Agents pipe stdin, so this catches most automated attempts
+    if !is_interactive_terminal() {
+        return Err("Railyard can only be uninstalled from an interactive terminal.\n  \
+                    This prevents AI agents from removing their own guardrails."
+            .to_string());
+    }
+
+    // Show native OS confirmation dialog — requires a real human to click through
+    if !show_uninstall_confirmation()? {
+        return Err("Uninstall cancelled by user".to_string());
+    }
+
     let settings_path = claude_settings_path();
 
     if !settings_path.exists() {
@@ -109,6 +123,124 @@ pub fn uninstall_hooks() -> Result<String, String> {
         "Removed railyard hooks from {}",
         settings_path.display()
     ))
+}
+
+/// Check if we're running in an interactive terminal (not piped by an agent).
+fn is_interactive_terminal() -> bool {
+    use std::io::IsTerminal;
+    std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
+}
+
+/// Show a native OS confirmation dialog for uninstalling Railyard.
+/// Returns true if the user confirmed, false if cancelled.
+/// This is the key security boundary — an AI agent cannot click a GUI button.
+fn show_uninstall_confirmation() -> Result<bool, String> {
+    if cfg!(target_os = "macos") {
+        show_macos_dialog()
+    } else if cfg!(target_os = "windows") {
+        show_windows_dialog()
+    } else {
+        show_linux_dialog()
+    }
+}
+
+/// macOS: native dialog via osascript (AppleScript)
+fn show_macos_dialog() -> Result<bool, String> {
+    let script = r#"
+        display dialog "Remove Railyard guardrails?\n\nClaude Code will run without restrictions until you reinstall.\n\nTo turn protection back on:\n  railyard install" with title "Railyard" with icon caution buttons {"Cancel", "Remove"} default button "Cancel" cancel button "Cancel"
+    "#;
+
+    let output = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(script.trim())
+        .output()
+        .map_err(|e| format!("Failed to show confirmation dialog: {}", e))?;
+
+    // osascript returns exit code 1 if the user clicks Cancel
+    Ok(output.status.success())
+}
+
+/// Windows: native dialog via PowerShell
+fn show_windows_dialog() -> Result<bool, String> {
+    let script = r#"
+        Add-Type -AssemblyName System.Windows.Forms
+        $result = [System.Windows.Forms.MessageBox]::Show(
+            "Remove Railyard guardrails?`n`nClaude Code will run without restrictions until you reinstall.`n`nTo turn protection back on:`n  railyard install",
+            "Railyard",
+            [System.Windows.Forms.MessageBoxButtons]::YesNo,
+            [System.Windows.Forms.MessageBoxIcon]::Warning,
+            [System.Windows.Forms.MessageBoxDefaultButton]::Button2
+        )
+        if ($result -eq [System.Windows.Forms.DialogResult]::Yes) { exit 0 } else { exit 1 }
+    "#;
+
+    let output = std::process::Command::new("powershell")
+        .arg("-NoProfile")
+        .arg("-Command")
+        .arg(script.trim())
+        .output()
+        .map_err(|e| format!("Failed to show confirmation dialog: {}", e))?;
+
+    Ok(output.status.success())
+}
+
+/// Linux: try zenity (GNOME), then kdialog (KDE), then fall back to terminal prompt
+fn show_linux_dialog() -> Result<bool, String> {
+    // Try zenity first (GNOME/GTK)
+    if let Ok(output) = std::process::Command::new("zenity")
+        .arg("--question")
+        .arg("--title=Railyard")
+        .arg("--text=Remove Railyard guardrails?\n\nClaude Code will run without restrictions until you reinstall.\n\nTo turn protection back on: railyard install")
+        .arg("--ok-label=Remove Protection")
+        .arg("--cancel-label=Cancel")
+        .arg("--icon-name=dialog-warning")
+        .arg("--width=400")
+        .output()
+    {
+        return Ok(output.status.success());
+    }
+
+    // Try kdialog (KDE)
+    if let Ok(output) = std::process::Command::new("kdialog")
+        .arg("--warningyesno")
+        .arg("Remove Railyard guardrails?\n\nClaude Code will run without restrictions until you reinstall.\n\nTo turn protection back on: railyard install")
+        .arg("--title")
+        .arg("Railyard")
+        .arg("--yes-label")
+        .arg("Remove Protection")
+        .arg("--no-label")
+        .arg("Cancel")
+        .output()
+    {
+        return Ok(output.status.success());
+    }
+
+    // Fallback: terminal confirmation with a hard-to-guess phrase
+    show_terminal_confirmation()
+}
+
+/// Terminal fallback: require the user to type a specific phrase.
+/// An agent could theoretically type this, but combined with the TTY check
+/// and the self-protection blocklist rules, it's defense in depth.
+fn show_terminal_confirmation() -> Result<bool, String> {
+    use std::io::Write;
+
+    eprintln!();
+    eprintln!();
+    eprintln!("  Remove Railyard guardrails?");
+    eprintln!();
+    eprintln!("  Claude Code will run without restrictions until you reinstall.");
+    eprintln!("  To turn protection back on: railyard install");
+    eprintln!();
+    eprint!("  Type \"remove\" to confirm: ");
+    std::io::stderr().flush().ok();
+
+    let mut input = String::new();
+    std::io::stdin()
+        .read_line(&mut input)
+        .map_err(|e| format!("Failed to read input: {}", e))?;
+
+    Ok(input.trim() == "remove")
 }
 
 /// Check if railyard hooks are currently installed.

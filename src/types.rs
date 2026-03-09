@@ -134,6 +134,7 @@ impl Default for FenceConfig {
                 "~/.aws".to_string(),
                 "~/.gnupg".to_string(),
                 "~/.config/gcloud".to_string(),
+                "~/.claude".to_string(),
                 "/etc".to_string(),
                 "/usr".to_string(),
                 "/System".to_string(),

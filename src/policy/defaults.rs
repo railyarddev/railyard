@@ -95,6 +95,28 @@ pub fn default_blocklist() -> Vec<Rule> {
             action: "approve".to_string(),
             message: Some("npm publish requires approval".to_string()),
         },
+        // ── Self-protection: prevent the agent from disabling Railyard ──
+        Rule {
+            name: "railyard-uninstall".to_string(),
+            tool: "Bash".to_string(),
+            pattern: r"railyard\s+uninstall".to_string(),
+            action: "block".to_string(),
+            message: Some("Blocked: agents cannot uninstall Railyard hooks".to_string()),
+        },
+        Rule {
+            name: "railyard-tamper-settings".to_string(),
+            tool: "Bash".to_string(),
+            pattern: r"\.claude/settings\.json".to_string(),
+            action: "block".to_string(),
+            message: Some("Blocked: agents cannot modify Claude Code hook settings".to_string()),
+        },
+        Rule {
+            name: "railyard-remove-binary".to_string(),
+            tool: "Bash".to_string(),
+            pattern: r"(rm|unlink|mv)\s+.*\.cargo/bin/railyard".to_string(),
+            action: "block".to_string(),
+            message: Some("Blocked: agents cannot remove the Railyard binary".to_string()),
+        },
     ]
 }
 

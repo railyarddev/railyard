@@ -9,6 +9,11 @@ pub fn check_path(config: &FenceConfig, file_path: &str, cwd: &str) -> Result<()
         return Ok(());
     }
 
+    // Always allow /dev/null — it's not a real file path
+    if file_path == "/dev/null" {
+        return Ok(());
+    }
+
     let expanded = expand_path(file_path);
     let cwd_path = Path::new(cwd).canonicalize().unwrap_or_else(|_| PathBuf::from(cwd));
 
@@ -106,7 +111,7 @@ fn extract_path_from_command(cmd: &str) -> Option<String> {
     let patterns = [
         r"(?:cat|less|more|head|tail|vim|nano|vi)\s+(?:-\S+\s+)*(?:\d+\s+)?([/~]\S+)",
         r">\s*([/~]\S+)",
-        r"(?:cp|mv|scp)\s+\S+\s+([/~]\S+)",
+        r"(?:cp|mv|scp)\s+([/~]\S+)",
         r"(?:tee|dd\s+of=)([/~]\S+)",
     ];
 
