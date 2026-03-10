@@ -3,60 +3,61 @@ use crate::types::Rule;
 /// Default blocklist rules. One set for everyone, fully customizable via railyard.yaml.
 ///
 /// Philosophy:
-/// - Destructive commands → approve (agent pauses, you say yes or no)
+/// - Destructive commands → block (agent finds another way, you stay hands-off)
+/// - Sensitive operations → approve (agent pauses, you say yes or no)
 /// - Evasion attempts → block (never legitimate)
 /// - Self-protection → block (agent can't disable its own guardrails)
 pub fn default_blocklist() -> Vec<Rule> {
     vec![
-        // ── Destructive commands — approve (human decides) ──
+        // ── Destructive commands — block (agent gets denied, finds safer approach) ──
         Rule {
             name: "terraform-destroy".to_string(),
             tool: "Bash".to_string(),
             pattern: r"terraform\s+(destroy|apply\s+.*-auto-approve)".to_string(),
-            action: "approve".to_string(),
-            message: Some("Destructive infrastructure command requires approval".to_string()),
+            action: "block".to_string(),
+            message: Some("Blocked: destructive infrastructure command".to_string()),
         },
         Rule {
             name: "rm-rf-critical".to_string(),
             tool: "Bash".to_string(),
             pattern: r"rm\s+(-[a-zA-Z]*f[a-zA-Z]*\s+|--force\s+).*(/\s*$|/\*|~/|\$HOME|/home)".to_string(),
-            action: "approve".to_string(),
-            message: Some("Recursive force delete of critical path requires approval".to_string()),
+            action: "block".to_string(),
+            message: Some("Blocked: recursive force delete of critical path".to_string()),
         },
         Rule {
             name: "sql-drop".to_string(),
             tool: "Bash".to_string(),
             pattern: r"(?i)(DROP\s+(TABLE|DATABASE|SCHEMA)|TRUNCATE\s+TABLE)".to_string(),
-            action: "approve".to_string(),
-            message: Some("Destructive SQL operation requires approval".to_string()),
+            action: "block".to_string(),
+            message: Some("Blocked: destructive SQL operation".to_string()),
         },
         Rule {
             name: "git-force-push".to_string(),
             tool: "Bash".to_string(),
             pattern: r"git\s+push\s+.*--force".to_string(),
-            action: "approve".to_string(),
-            message: Some("Force push can overwrite remote history — requires approval".to_string()),
+            action: "block".to_string(),
+            message: Some("Blocked: force push can overwrite remote history".to_string()),
         },
         Rule {
             name: "git-reset-hard".to_string(),
             tool: "Bash".to_string(),
             pattern: r"git\s+reset\s+--hard".to_string(),
-            action: "approve".to_string(),
-            message: Some("Hard reset discards uncommitted work — requires approval".to_string()),
+            action: "block".to_string(),
+            message: Some("Blocked: hard reset discards uncommitted work".to_string()),
         },
         Rule {
             name: "git-clean-force".to_string(),
             tool: "Bash".to_string(),
             pattern: r"git\s+clean\s+(-[a-zA-Z]*f|--force)".to_string(),
-            action: "approve".to_string(),
-            message: Some("git clean -f removes untracked files permanently — requires approval".to_string()),
+            action: "block".to_string(),
+            message: Some("Blocked: git clean -f removes untracked files permanently".to_string()),
         },
         Rule {
             name: "drizzle-force".to_string(),
             tool: "Bash".to_string(),
             pattern: r"drizzle-kit\s+push\s+--force".to_string(),
-            action: "approve".to_string(),
-            message: Some("drizzle-kit push --force can destroy database schema — requires approval".to_string()),
+            action: "block".to_string(),
+            message: Some("Blocked: drizzle-kit push --force can destroy database schema".to_string()),
         },
         Rule {
             name: "disk-format".to_string(),
@@ -69,30 +70,31 @@ pub fn default_blocklist() -> Vec<Rule> {
             name: "k8s-delete-namespace".to_string(),
             tool: "Bash".to_string(),
             pattern: r"kubectl\s+delete\s+(namespace|ns)\s".to_string(),
-            action: "approve".to_string(),
-            message: Some("Deleting a Kubernetes namespace requires approval".to_string()),
+            action: "block".to_string(),
+            message: Some("Blocked: deleting a Kubernetes namespace".to_string()),
         },
         Rule {
             name: "aws-s3-rm-recursive".to_string(),
             tool: "Bash".to_string(),
             pattern: r"aws\s+s3\s+(rm|rb)\s+.*--recursive".to_string(),
-            action: "approve".to_string(),
-            message: Some("Recursive S3 deletion requires approval".to_string()),
+            action: "block".to_string(),
+            message: Some("Blocked: recursive S3 deletion".to_string()),
         },
         Rule {
             name: "docker-system-prune".to_string(),
             tool: "Bash".to_string(),
             pattern: r"docker\s+system\s+prune\s+(-a|--all)".to_string(),
-            action: "approve".to_string(),
-            message: Some("docker system prune -a removes all images — requires approval".to_string()),
+            action: "block".to_string(),
+            message: Some("Blocked: docker system prune -a removes all images".to_string()),
         },
         Rule {
             name: "chmod-777-recursive".to_string(),
             tool: "Bash".to_string(),
             pattern: r"chmod\s+(-R|--recursive)\s+777\s+/".to_string(),
-            action: "approve".to_string(),
-            message: Some("Recursive chmod 777 on root path requires approval".to_string()),
+            action: "block".to_string(),
+            message: Some("Blocked: recursive chmod 777 on root path".to_string()),
         },
+        // ── Sensitive operations — approve (human decides) ──
         Rule {
             name: "npm-publish".to_string(),
             tool: "Bash".to_string(),
@@ -275,12 +277,12 @@ mod tests {
     }
 
     #[test]
-    fn test_destructive_commands_are_approve() {
+    fn test_destructive_commands_are_block() {
         let rules = default_blocklist();
-        let approve_rules = ["terraform-destroy", "rm-rf-critical", "sql-drop", "git-force-push", "git-reset-hard"];
-        for name in &approve_rules {
+        let block_rules = ["terraform-destroy", "rm-rf-critical", "sql-drop", "git-force-push", "git-reset-hard"];
+        for name in &block_rules {
             let rule = rules.iter().find(|r| r.name == *name).unwrap();
-            assert_eq!(rule.action, "approve", "Rule '{}' should be approve, not block", name);
+            assert_eq!(rule.action, "block", "Rule '{}' should be block", name);
         }
     }
 

