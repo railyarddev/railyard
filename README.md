@@ -149,6 +149,8 @@ The agent can't turn Railyard off:
 
 Railyard gets stronger with every bypass found. New evasion patterns, new destructive commands, new attack vectors — they all become new rules. Think you can find one we missed? Open an issue or PR and we'll ship a fix.
 
+Want to discuss? [Join the Discord](https://discord.gg/MyaUZSus) or email us at ari@railyard.tech.
+
 ---
 
 ## Contributing
