@@ -15,8 +15,8 @@ struct Cli {
 enum Commands {
     /// Install railyard hooks into Claude Code
     Install {
-        /// Protection mode: "chill" (block destructive commands) or "hardcore" (full lockdown)
-        #[arg(long, default_value = "chill")]
+        /// Protection mode: "hardcore" (full lockdown) or "chill" (block destructive commands only)
+        #[arg(long, default_value = "hardcore")]
         mode: String,
     },
 
@@ -25,8 +25,8 @@ enum Commands {
 
     /// Generate a starter railyard.yaml in the current directory
     Init {
-        /// Protection mode: "chill" or "hardcore"
-        #[arg(long, default_value = "chill")]
+        /// Protection mode: "hardcore" or "chill"
+        #[arg(long, default_value = "hardcore")]
         mode: String,
     },
 
@@ -113,7 +113,7 @@ fn main() {
 }
 
 fn cmd_install(mode: &str) -> i32 {
-    let mode = if mode == "hardcore" { "hardcore" } else { "chill" };
+    let mode = if mode == "chill" { "chill" } else { "hardcore" };
 
     println!("{}", "railyard".bold());
     println!();
@@ -134,14 +134,14 @@ fn cmd_install(mode: &str) -> i32 {
             println!("  {} Hooks registered with Claude Code", "✓".green().bold());
             println!("  {} {}", "✓".green().bold(), msg);
             println!("  {} Mode: {} ({} rules)", "✓".green().bold(), mode_label, rule_count);
-            if mode == "chill" {
-                println!();
-                println!("  Blocks destructive commands. No restrictions on file access or network.");
-                println!("  For full lockdown: {}", "railyard install --mode hardcore".cyan());
-            } else {
+            if mode == "hardcore" {
                 println!();
                 println!("  Full lockdown: path fencing, network policy, credential protection.");
                 println!("  For relaxed mode: {}", "railyard install --mode chill".cyan());
+            } else {
+                println!();
+                println!("  Blocks destructive commands. No restrictions on file access or network.");
+                println!("  For full lockdown: {}", "railyard install --mode hardcore".cyan());
             }
             0
         }
@@ -172,7 +172,7 @@ fn cmd_init(mode: &str) -> i32 {
         return 1;
     }
 
-    let mode = if mode == "hardcore" { "hardcore" } else { "chill" };
+    let mode = if mode == "chill" { "chill" } else { "hardcore" };
     let default_yaml = include_str!("../defaults/railyard.yaml");
     // Inject mode into the generated YAML
     let yaml_with_mode = format!("mode: {}\n{}", mode, default_yaml);

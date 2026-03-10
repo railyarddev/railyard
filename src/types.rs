@@ -76,7 +76,7 @@ impl HookOutput {
 pub struct Policy {
     #[serde(default = "default_version")]
     pub version: u32,
-    /// "chill" (default) or "hardcore"
+    /// "hardcore" (default) or "chill"
     #[serde(default = "default_mode")]
     pub mode: String,
     #[serde(default)]
@@ -94,7 +94,7 @@ pub struct Policy {
 }
 
 fn default_mode() -> String {
-    "chill".to_string()
+    "hardcore".to_string()
 }
 
 fn default_version() -> u32 {
@@ -143,8 +143,6 @@ impl Default for FenceConfig {
                 "~/.config/gcloud".to_string(),
                 "~/.claude".to_string(),
                 "/etc".to_string(),
-                "/usr".to_string(),
-                "/System".to_string(),
             ],
         }
     }

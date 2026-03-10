@@ -26,7 +26,7 @@ pub fn run_configure() -> i32 {
     println!();
 
     // Step 1: Choose mode
-    let modes = vec!["chill — block destructive commands only", "hardcore — full lockdown"];
+    let modes = vec!["hardcore — full lockdown", "chill — block destructive commands only"];
     let mode_idx = match Select::with_theme(&ColorfulTheme::default())
         .with_prompt("  Protection mode")
         .items(&modes)
@@ -36,7 +36,7 @@ pub fn run_configure() -> i32 {
         Ok(idx) => idx,
         Err(_) => return 1,
     };
-    let mode = if mode_idx == 1 { "hardcore" } else { "chill" };
+    let mode = if mode_idx == 1 { "chill" } else { "hardcore" };
 
     println!();
 

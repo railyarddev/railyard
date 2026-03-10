@@ -73,18 +73,15 @@ fn merge_with_defaults(mut policy: Policy) -> Policy {
     policy
 }
 
-/// Default policy with built-in blocklist (chill mode).
+/// Default policy with built-in blocklist (hardcore mode).
 pub fn default_policy() -> Policy {
     Policy {
         version: 1,
-        mode: "chill".to_string(),
-        blocklist: crate::policy::defaults::default_blocklist(),
+        mode: "hardcore".to_string(),
+        blocklist: crate::policy::defaults::hardcore_blocklist(),
         approve: vec![],
         allowlist: vec![],
-        fence: crate::types::FenceConfig {
-            enabled: false,
-            ..Default::default()
-        },
+        fence: Default::default(),
         trace: Default::default(),
         snapshot: Default::default(),
     }
@@ -114,9 +111,9 @@ mod tests {
     fn test_load_default_policy() {
         let policy = default_policy();
         assert!(!policy.blocklist.is_empty());
-        assert_eq!(policy.mode, "chill");
-        // Chill mode: fence is off by default
-        assert!(!policy.fence.enabled);
+        assert_eq!(policy.mode, "hardcore");
+        // Hardcore mode: fence is on by default
+        assert!(policy.fence.enabled);
         assert!(policy.trace.enabled);
         assert!(policy.snapshot.enabled);
     }

@@ -237,14 +237,30 @@ pub fn extract_paths_from_command(cmd: &str) -> Vec<String> {
     paths
 }
 
-/// Paths that should never trigger fence violations
+/// Paths that should never trigger fence violations.
+/// These are system/binary paths that appear in commands but aren't data targets.
 fn is_benign_path(path: &str) -> bool {
+    // /dev/* — virtual device paths
     path == "/dev/null"
         || path == "/dev/stdin"
         || path == "/dev/stdout"
         || path == "/dev/stderr"
         || path == "/dev/tty"
         || path.starts_with("/dev/fd/")
+        // System binary/library paths (read-only, not sensitive data)
+        || path.starts_with("/usr/bin/")
+        || path.starts_with("/usr/local/bin/")
+        || path.starts_with("/usr/lib/")
+        || path.starts_with("/usr/sbin/")
+        || path.starts_with("/bin/")
+        || path.starts_with("/sbin/")
+        || path.starts_with("/opt/homebrew/bin/")
+        // Cargo binary path (railyard itself lives here)
+        || path.contains(".cargo/bin/")
+        // Temporary files
+        || path.starts_with("/tmp/")
+        || path.starts_with("/var/tmp/")
+        || path.starts_with("/private/tmp/")
 }
 
 #[cfg(test)]
