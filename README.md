@@ -50,7 +50,7 @@ You want Claude Code to be fully autonomous. But:
 
 So you're stuck clicking "Allow" on every command like a cookie banner.
 
-Railyard fixes this. Think of the Shinkansen — it goes 320 km/h not because it has fewer safety systems, but because it has *more*. The rails let it go faster. Same idea here.
+Railyard fixes this. Think of the [Shinkansen](https://en.wikipedia.org/wiki/Shinkansen) — Japanese high-speed rail goes 320 km/h not because it has fewer safety systems, but because it has *more*. The rails let it go faster. Same idea here.
 
 ---
 
