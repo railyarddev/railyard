@@ -6,7 +6,7 @@
 <p align="center">
   <a href="https://github.com/railyarddev/railyard/stargazers"><img src="https://img.shields.io/github/stars/railyarddev/railyard?style=flat" alt="GitHub stars"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
-  <img src="https://img.shields.io/badge/tests-74%20passed-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-77%20passed-brightgreen" alt="Tests">
   <img src="https://img.shields.io/badge/built%20with-Rust-orange.svg" alt="Built with Rust">
   <a href="https://discord.gg/PLACEHOLDER"><img src="https://img.shields.io/badge/Discord-join%20chat-7289da" alt="Discord"></a>
 </p>
@@ -32,14 +32,14 @@ A Rust binary that sits between Claude Code and your system. Every tool call —
 ```
 $ railyard install
   ✓ Hooks registered with Claude Code
-  ✓ Default protections active (16 rules)
+  ✓ Mode: chill (16 rules)
 
 $ claude "clean up duplicate AWS resources"
   ⛔ BLOCKED  terraform destroy
      rule: terraform-destroy · railyard.yaml:14
 ```
 
-**One command to install. 16 rules out of the box. <2ms per decision. Fully on-device. The agent can't turn it off.**
+**One command to install. Two modes: chill or hardcore. <2ms per decision. Fully on-device. The agent can't turn it off.**
 
 ### Why does this exist?
 
@@ -58,16 +58,53 @@ These aren't hypothetical. Agents have been [documented bypassing their own safe
 ## Install
 
 ```bash
-# 1. Build from source
+# Option 1: Build from source
 cargo install --path .
+railyard install
 
-# 2. Register hooks with Claude Code
+# Option 2: npm (downloads prebuilt binary)
+npm install -g railyard
 railyard install
 ```
 
-That's it. You're protected. Zero config required.
+That's it. You're protected. Zero config required — ships with **chill mode** (blocks destructive commands, no restrictions on file access or network).
+
+Want full lockdown? Use **hardcore mode**:
+
+```bash
+railyard install --mode hardcore
+```
+
+### Interactive setup
+
+```bash
+railyard configure
+```
+
+Pick your mode, toggle individual protections on/off, configure fencing — all from an interactive terminal UI.
 
 To uninstall, run `railyard uninstall` from your terminal — a native OS confirmation dialog will appear. The agent cannot click it. [More on self-protection below.](#6-self-protection--the-agent-cant-turn-it-off)
+
+---
+
+## Two Modes
+
+| | **Chill** | **Hardcore** |
+|---|---|---|
+| **Philosophy** | Just don't blow stuff up | Full lockdown |
+| **Destructive commands** | 13 rules (block/approve) | 13 rules (block/approve) |
+| **Self-protection** | 3 rules | 3 rules |
+| **Network policy** | — | 5 rules (curl\|sh, netcat, POST, wget, ssh) |
+| **Credential protection** | — | 2 rules (env dump, git config) |
+| **Evasion detection** | — | 4 rules (base64, eval, hex, symlinks) |
+| **Path fencing** | Off by default | On (project dir only, denies ~/.ssh, ~/.aws, etc.) |
+| **Trace logging** | On | On |
+| **Snapshots** | On | On |
+| **Total rules** | 16 | 27 |
+
+**Chill mode** is the default. You get protection from the commands that actually destroy things, plus self-protection so the agent can't disable Railyard. No restrictions on file access or network — the agent can still be productive.
+
+**Hardcore mode** is for when you want full control. Network egress is monitored, credentials are fenced, evasion techniques are caught, and the agent can only access your project directory.
 
 ---
 
@@ -129,7 +166,7 @@ Railyard hooks into Claude Code's native [hooks system](https://docs.anthropic.c
 
 ### 1. Command Blocking — Stops Real Disasters
 
-16 rules active by default. Zero config.
+Active in both modes. Zero config.
 
 | Rule | What it catches | Why |
 |------|----------------|-----|
@@ -146,13 +183,10 @@ Railyard hooks into Claude Code's native [hooks system](https://docs.anthropic.c
 | `docker-system-prune` | `docker system prune -a` | Removes all images |
 | `chmod-777-recursive` | `chmod -R 777 /` | Security disaster |
 | `npm-publish` | `npm publish` | Requires human approval |
-| `railyard-uninstall` | `railyard uninstall` | [Self-protection](#6-self-protection--the-agent-cant-turn-it-off) |
-| `railyard-tamper-settings` | Bash commands targeting hook config | [Self-protection](#6-self-protection--the-agent-cant-turn-it-off) |
-| `railyard-remove-binary` | `rm .cargo/bin/railyard` | [Self-protection](#6-self-protection--the-agent-cant-turn-it-off) |
 
-### 2. Evasion Detection — Catches Agent Bypass Attempts
+### 2. Evasion Detection — Catches Agent Bypass Attempts (Hardcore)
 
-Agents sometimes try to sneak past safety rules. Railyard normalizes commands before matching, so every trick gets caught:
+Agents sometimes try to sneak past safety rules. Railyard normalizes commands before matching:
 
 ```
 Direct:     terraform destroy                           → ⛔ blocked
@@ -164,7 +198,7 @@ Backtick:   `echo terraform` destroy                    → resolved   → ⛔ b
 Hex:        $'\x74\x65\x72\x72...'                      → decoded    → ⛔ blocked
 ```
 
-### 3. Filesystem Sandboxing — Protects Your Credentials
+### 3. Filesystem Sandboxing — Protects Your Credentials (Hardcore)
 
 ```
   Your project directory     ✅ Claude Code can read/write here
@@ -176,9 +210,19 @@ Hex:        $'\x74\x65\x72\x72...'                      → decoded    → ⛔ b
   /etc/                      ⛔ DENIED
 ```
 
-Your credentials stay on your machine, not in a model's context window.
+All paths are canonicalized — `../` traversal and symlink escapes are caught.
 
-### 4. Snapshots — Cursor-Style Checkpoints for Claude Code
+### 4. Network Policy (Hardcore)
+
+| Rule | Action |
+|------|--------|
+| `curl \| sh` / `curl \| bash` | Block |
+| `nc` / `netcat` / `ncat` | Block |
+| `curl -X POST` / `curl --data` | Approve (human sign-off) |
+| `wget` | Approve |
+| `ssh` / `scp` / `rsync` | Approve |
+
+### 5. Snapshots — Cursor-Style Checkpoints for Claude Code
 
 Every file write/edit is backed up before the change. Undo one edit, N edits, or an entire session.
 
@@ -187,13 +231,11 @@ $ railyard rollback --steps 1 --session abc123
   ✓ Restored src/main.rs from snapshot c3
 
 $ railyard rollback --session abc123
-  ✓ Restored src/main.rs from snapshot a1    ← back to original
+  ✓ Restored src/main.rs from snapshot a1
   ✓ Restored src/lib.rs from snapshot a2
 ```
 
-No git required. Snapshots capture every intermediate state, including new files (rollback = delete).
-
-### 5. Audit Trail — Know Exactly What the Agent Did
+### 6. Audit Trail — Know Exactly What the Agent Did
 
 Every tool call logged as structured JSONL:
 
@@ -206,13 +248,9 @@ $ railyard log --session abc123
 [14:22:03Z] APPROVE   Bash | psql -h prod-db (prod-db)
 ```
 
-Pipe to your observability stack. Grep for `"decision":"block"`. Full accountability.
+### 7. Self-Protection — The Agent Can't Turn It Off
 
-### 6. Self-Protection — The Agent Can't Turn It Off
-
-The most important question: *what stops Claude Code from just disabling Railyard?*
-
-Three layers:
+Three layers prevent the agent from disabling Railyard:
 
 ```
 Layer 1: Hook Blocklist
@@ -256,12 +294,22 @@ Layer 3: Native OS Dialog
 
 ## Configuration
 
+### Quick start
+
 ```bash
-railyard init    # Generate a starter railyard.yaml
+# Interactive — pick mode, toggle protections
+railyard configure
+
+# Or generate a YAML file to edit manually
+railyard init                    # chill mode (default)
+railyard init --mode hardcore    # hardcore mode
 ```
+
+### railyard.yaml
 
 ```yaml
 version: 1
+mode: chill   # or "hardcore"
 
 blocklist:
   - name: terraform-destroy
@@ -313,19 +361,20 @@ $ railyard chat
 ## CLI Reference
 
 ```
-railyard install              # Register hooks with Claude Code
-railyard uninstall            # Remove hooks (requires OS confirmation)
-railyard init                 # Generate starter railyard.yaml
-railyard status               # Show current protection status
-railyard chat                 # Interactive policy builder
+railyard install [--mode chill|hardcore]   # Register hooks with Claude Code
+railyard uninstall                         # Remove hooks (requires OS confirmation)
+railyard init [--mode chill|hardcore]      # Generate starter railyard.yaml
+railyard configure                         # Interactive protection setup
+railyard status                            # Show current protection status
+railyard chat                              # Policy builder via Claude Code
 
-railyard log                  # List sessions with traces
-railyard log --session <id>   # View traces for a session
+railyard log                               # List sessions with traces
+railyard log --session <id>                # View traces for a session
 
-railyard rollback --session <id>              # List snapshots
-railyard rollback --session <id> --steps 3    # Undo last 3 edits
-railyard rollback --session <id> --id <snap>  # Restore specific snapshot
-railyard rollback --session <id> --file path  # Restore specific file
+railyard rollback --session <id>                     # List snapshots
+railyard rollback --session <id> --steps 3           # Undo last 3 edits
+railyard rollback --session <id> --id <snap>         # Restore specific snapshot
+railyard rollback --session <id> --file path         # Restore specific file
 ```
 
 ---
@@ -337,6 +386,7 @@ railyard/
 ├── src/
 │   ├── main.rs              # CLI entry point
 │   ├── types.rs             # Shared types (HookInput, Policy, Decision)
+│   ├── configure.rs         # Interactive terminal configuration UI
 │   ├── hook/
 │   │   ├── handler.rs       # Reads stdin JSON, dispatches to handlers
 │   │   ├── pre_tool.rs      # PreToolUse: fence → evasion → policy → snapshot → trace
@@ -348,9 +398,9 @@ railyard/
 │   ├── policy/
 │   │   ├── engine.rs        # Rule evaluation (allowlist → block → approve)
 │   │   ├── loader.rs        # Find & parse railyard.yaml, merge with defaults
-│   │   └── defaults.rs      # Built-in blocklist (16 rules)
+│   │   └── defaults.rs      # Built-in rules (16 chill + 11 hardcore)
 │   ├── fence/
-│   │   └── path.rs          # Filesystem sandboxing + /dev/null whitelist
+│   │   └── path.rs          # Filesystem sandboxing with path canonicalization
 │   ├── snapshot/
 │   │   ├── capture.rs       # SHA-256 snapshots before file writes
 │   │   └── rollback.rs      # Restore from any snapshot
@@ -360,6 +410,10 @@ railyard/
 │       └── hooks.rs         # Register/remove hooks + native OS confirmation
 ├── defaults/
 │   └── railyard.yaml        # Starter policy template
+├── npm/
+│   ├── package.json         # npm distribution wrapper
+│   ├── install.js           # Binary download/build script
+│   └── demo.js              # Quick demo of protections
 └── tests/
     └── attack_simulation.rs # 28 real-world incident + evasion tests
 ```
@@ -369,7 +423,7 @@ railyard/
 ## Testing
 
 ```bash
-# All tests: 46 unit + 28 attack simulations = 74
+# All tests: 49 unit + 28 attack simulations = 77
 cargo test
 
 # Just the attack simulations

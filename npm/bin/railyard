@@ -1,0 +1,4 @@
+#!/bin/sh
+# This is a placeholder — replaced by the actual binary during npm install.
+echo "railyard binary not found. Run: npm install railyard" >&2
+exit 1

@@ -1,4 +1,5 @@
 mod block;
+mod configure;
 mod fence;
 mod hook;
 mod install;
@@ -72,6 +73,9 @@ enum Commands {
     /// Show railyard status
     Status,
 
+    /// Interactive protection configuration
+    Configure,
+
     /// Interactive policy configuration (launches Claude Code)
     Chat,
 }
@@ -87,6 +91,7 @@ fn main() {
         Commands::Log { session, count } => cmd_log(session, count),
         Commands::Rollback { id, session, file, steps } => cmd_rollback(id, session, file, steps),
         Commands::Status => cmd_status(),
+        Commands::Configure => configure::run_configure(),
         Commands::Chat => cmd_chat(),
     };
 
