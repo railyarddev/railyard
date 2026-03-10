@@ -1,7 +1,7 @@
 <p align="center">
   <h1 align="center">railyard</h1>
-  <p align="center"><strong>Run <code>claude --dangerously-skip-permissions</code> without the danger.</strong></p>
-  <p align="center">Railyard sits between Claude Code and your system. Normal commands flow through instantly.<br>Destructive ones get blocked. You stop babysitting.</p>
+  <p align="center"><strong>A secure runtime for AI coding agents.</strong></p>
+  <p align="center">Run <code>claude --dangerously-skip-permissions</code> without the danger.<br>Normal commands flow through instantly. Destructive ones get blocked. You stop babysitting.</p>
 </p>
 
 <p align="center">
