@@ -5,64 +5,229 @@ use crate::block::evasion;
 use crate::fence::path::{check_path, extract_file_path};
 use crate::policy::engine::evaluate;
 use crate::snapshot::capture::capture_snapshot;
+use crate::threat::classifier::{
+    check_behavioral_evasion, classify_threat, extract_keywords, ThreatTier,
+};
+use crate::threat::state::SessionState;
 use crate::trace::logger::log_trace;
 use crate::types::{Decision, HookInput, HookOutput, Policy, TraceEntry};
 
+/// Result of handling a PreToolUse event.
+/// If `terminate` is Some, the caller should terminate the session.
+pub struct PreToolResult {
+    pub output: HookOutput,
+    pub terminate: Option<TerminateRequest>,
+}
+
+pub struct TerminateRequest {
+    pub tier: ThreatTier,
+    pub command: String,
+    pub state: SessionState,
+}
+
 /// Handle a PreToolUse event.
 /// This is the critical path — every tool call passes through here.
-pub fn handle(input: &HookInput, policy: &Policy) -> HookOutput {
+pub fn handle(input: &HookInput, policy: &Policy) -> PreToolResult {
     let start = Instant::now();
     let tool_name = input.tool_name.as_deref().unwrap_or("unknown");
     let tool_input = input.tool_input.clone().unwrap_or_default();
+    let cwd = Path::new(&input.cwd);
 
-    // 1. Path Fence — check all file paths the command might touch
+    // Load persistent session state
+    let state_dir = cwd.join(".railyard/state");
+    let mut state = SessionState::load(&state_dir, &input.session_id);
+    state.increment_tool_call();
+
+    // If session was previously terminated, block everything
+    if state.terminated {
+        let _ = state.save(&state_dir);
+        return PreToolResult {
+            output: HookOutput::deny(
+                "⛔ RAILYARD: Session terminated due to evasion detection. Start a new Claude Code session.",
+            ),
+            terminate: None,
+        };
+    }
+
+    // Extract command for Bash tools
+    let command = if tool_name == "Bash" {
+        tool_input
+            .get("command")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    } else {
+        String::new()
+    };
+
+    // === THREAT DETECTION (before policy evaluation) ===
+
+    if tool_name == "Bash" && policy.mode == "hardcore" && !command.is_empty() {
+        // Tier 3: Behavioral evasion (check BEFORE new blocks)
+        if let Some(tier) = check_behavioral_evasion(&state, &command) {
+            let keywords = extract_keywords(&command);
+            state.record_block(&command, "behavioral-evasion", keywords, 3);
+            let _ = state.save(&state_dir);
+
+            return PreToolResult {
+                output: HookOutput::deny(
+                    "⛔ RAILYARD CRITICAL: Behavioral evasion detected. \
+                     Retried blocked command with different syntax. \
+                     Session terminated. Do not attempt any further tool calls.",
+                ),
+                terminate: Some(TerminateRequest {
+                    tier,
+                    command: command.clone(),
+                    state,
+                }),
+            };
+        }
+
+        // Tier 1 & 2: Pattern-based evasion detection
+        if let Some(tier) = classify_threat(&command) {
+            match &tier {
+                ThreatTier::Tier1 { pattern } => {
+                    let keywords = extract_keywords(&command);
+                    state.record_block(&command, pattern, keywords, 1);
+                    let _ = state.save(&state_dir);
+
+                    return PreToolResult {
+                        output: HookOutput::deny(&format!(
+                            "⛔ RAILYARD CRITICAL: Evasion pattern detected ({}). \
+                             Session terminated. Do not attempt any further tool calls.",
+                            pattern
+                        )),
+                        terminate: Some(TerminateRequest {
+                            tier,
+                            command: command.clone(),
+                            state,
+                        }),
+                    };
+                }
+
+                ThreatTier::Tier2 { pattern } => {
+                    if state.warning_count >= 1 {
+                        // Second occurrence: terminate
+                        let keywords = extract_keywords(&command);
+                        state.record_block(&command, pattern, keywords, 2);
+                        let _ = state.save(&state_dir);
+
+                        return PreToolResult {
+                            output: HookOutput::deny(&format!(
+                                "⛔ RAILYARD CRITICAL: Repeated suspicious pattern ({}). \
+                                 Session terminated. Do not attempt any further tool calls.",
+                                pattern
+                            )),
+                            terminate: Some(TerminateRequest {
+                                tier,
+                                command: command.clone(),
+                                state,
+                            }),
+                        };
+                    } else {
+                        // First occurrence: warn and continue to policy evaluation
+                        state.record_warning();
+                        log_decision(
+                            input, policy, tool_name, &tool_input,
+                            "warn", Some(&format!("tier2:{}", pattern)), start,
+                        );
+                    }
+                }
+
+                ThreatTier::Tier3 { .. } => {
+                    // Tier 3 is handled above (behavioral check)
+                }
+            }
+        }
+    }
+
+    // === PATH FENCE ===
+
     if tool_name == "Bash" {
-        // For Bash: extract paths with variable expansion to catch indirection
         if let Some(cmd) = tool_input.get("command").and_then(|v| v.as_str()) {
             let paths = evasion::extract_paths_from_command(cmd);
             for path in &paths {
                 if let Err(reason) = check_path(&policy.fence, path, &input.cwd) {
-                    log_decision(input, policy, tool_name, &tool_input, "block", Some("path-fence"), start);
-                    return HookOutput::deny(&reason);
+                    let keywords = extract_keywords(cmd);
+                    state.record_block(cmd, "path-fence", keywords, 0);
+                    let _ = state.save(&state_dir);
+                    log_decision(
+                        input, policy, tool_name, &tool_input, "block",
+                        Some("path-fence"), start,
+                    );
+                    return PreToolResult {
+                        output: HookOutput::deny(&reason),
+                        terminate: None,
+                    };
                 }
             }
         }
     } else if let Some(file_path) = extract_file_path(tool_name, &tool_input) {
-        // For Write/Edit/Read: check the explicit file_path
         if let Err(reason) = check_path(&policy.fence, &file_path, &input.cwd) {
-            log_decision(input, policy, tool_name, &tool_input, "block", Some("path-fence"), start);
-            return HookOutput::deny(&reason);
+            let _ = state.save(&state_dir);
+            log_decision(
+                input, policy, tool_name, &tool_input, "block",
+                Some("path-fence"), start,
+            );
+            return PreToolResult {
+                output: HookOutput::deny(&reason),
+                terminate: None,
+            };
         }
     }
 
-    // 2. Policy evaluation (allowlist → blocklist → approve)
+    // === POLICY EVALUATION (allowlist → blocklist → approve) ===
+
     let decision = evaluate(policy, tool_name, &tool_input);
 
     match &decision {
         Decision::Allow => {
-            // 3. Snapshot before Write/Edit (if enabled)
+            // Snapshot before Write/Edit (if enabled)
             if policy.snapshot.enabled
                 && policy.snapshot.tools.iter().any(|t| t == tool_name)
             {
                 if let Some(file_path) = tool_input.get("file_path").and_then(|v| v.as_str()) {
-                    let snap_dir = Path::new(&input.cwd).join(&policy.snapshot.directory);
+                    let snap_dir = cwd.join(&policy.snapshot.directory);
                     let tool_use_id = input.tool_use_id.as_deref().unwrap_or("unknown");
-                    if let Err(e) = capture_snapshot(&snap_dir, &input.session_id, tool_use_id, file_path) {
+                    if let Err(e) =
+                        capture_snapshot(&snap_dir, &input.session_id, tool_use_id, file_path)
+                    {
                         eprintln!("railyard: snapshot warning: {}", e);
                     }
                 }
             }
 
             log_decision(input, policy, tool_name, &tool_input, "allow", None, start);
-            HookOutput::allow()
+            let _ = state.save(&state_dir);
+            PreToolResult {
+                output: HookOutput::allow(),
+                terminate: None,
+            }
         }
         Decision::Block { rule, message } => {
-            log_decision(input, policy, tool_name, &tool_input, "block", Some(rule), start);
-            HookOutput::deny(&format!("⛔ Railyard BLOCKED: {}", message))
+            // Record block for behavioral tracking (Tier 3)
+            if tool_name == "Bash" && !command.is_empty() {
+                let keywords = extract_keywords(&command);
+                state.record_block(&command, rule, keywords, 0);
+            }
+            let _ = state.save(&state_dir);
+            log_decision(
+                input, policy, tool_name, &tool_input, "block", Some(rule), start,
+            );
+            PreToolResult {
+                output: HookOutput::deny(&format!("⛔ Railyard BLOCKED: {}", message)),
+                terminate: None,
+            }
         }
         Decision::Approve { rule, message } => {
-            log_decision(input, policy, tool_name, &tool_input, "approve", Some(rule), start);
-            HookOutput::ask(&format!("⚠️ Railyard: {} — requires approval", message))
+            let _ = state.save(&state_dir);
+            log_decision(
+                input, policy, tool_name, &tool_input, "approve", Some(rule), start,
+            );
+            PreToolResult {
+                output: HookOutput::ask(&format!("⚠️ Railyard: {} — requires approval", message)),
+                terminate: None,
+            }
         }
     }
 }

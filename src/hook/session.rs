@@ -1,16 +1,34 @@
 use std::path::Path;
 
+use crate::threat::killer::format_restart_warning;
+use crate::threat::state::SessionState;
 use crate::trace::logger::log_trace;
 use crate::types::{HookInput, Policy, TraceEntry};
 
 /// Handle a SessionStart event.
-/// Logs the session initialization.
+/// Logs the session initialization and warns about previous terminations.
 pub fn handle(input: &HookInput, policy: &Policy) {
+    let cwd = Path::new(&input.cwd);
+
+    // Check for recently terminated sessions and warn
+    let state_dir = cwd.join(".railyard/state");
+    let terminated = SessionState::find_recent_terminations(&state_dir);
+    if !terminated.is_empty() {
+        for state in &terminated {
+            let warning = format_restart_warning(state);
+            eprintln!("{}", warning);
+            eprintln!();
+        }
+    }
+
+    // Clean up old state files (>24h)
+    SessionState::cleanup_old_states(&state_dir);
+
     if !policy.trace.enabled {
         return;
     }
 
-    let trace_dir = Path::new(&input.cwd).join(&policy.trace.directory);
+    let trace_dir = cwd.join(&policy.trace.directory);
 
     let entry = TraceEntry {
         timestamp: chrono::Utc::now().to_rfc3339(),

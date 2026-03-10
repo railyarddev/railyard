@@ -5,6 +5,8 @@ pub mod fence;
 pub mod hook;
 pub mod install;
 pub mod policy;
+pub mod sandbox;
 pub mod snapshot;
+pub mod threat;
 pub mod trace;
 pub mod types;

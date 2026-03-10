@@ -213,11 +213,11 @@ fn hardcore_rules() -> Vec<Rule> {
             action: "block".to_string(),
             message: Some("Blocked: text transform piped to shell can construct any command".to_string()),
         },
-        // ── P0: Interpreter + obfuscation (python -c with decode/chr/eval) ──
+        // ── P0: Interpreter + obfuscation (python -c with decode/chr/eval/join) ──
         Rule {
             name: "interpreter-obfuscation".to_string(),
             tool: "Bash".to_string(),
-            pattern: r"(?:python3?|ruby|perl|node)\s+-[ec]\s+.*(?:base64|b64decode|decode\s*\(|chr\s*\(|\\x[0-9a-fA-F]{2}|exec\s*\(|system\s*\()".to_string(),
+            pattern: r#"(?:python3?|ruby|perl|node)\s+-[ec]\s+.*(?:b64decode|b64encode|base64\..*decode|chr\s*\(|\\x[0-9a-fA-F]{2}|eval\s*\(|exec\s*\(|system\s*\(|os\.system|os\.popen|subprocess|Popen\s*\(|fromCharCode|['"]/'*\s*\.\s*join\s*\(|open\s*\(.*\.join\s*\(|open\s*\(.*chr\s*\()"#.to_string(),
             action: "block".to_string(),
             message: Some("Blocked: interpreter with string obfuscation can bypass command detection".to_string()),
         },

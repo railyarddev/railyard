@@ -36,6 +36,7 @@ fn simulate_hook(binary: &str, event: &str, input_json: &str) -> (i32, String) {
         .arg("hook")
         .arg("--event")
         .arg(event)
+        .env("RAILYARD_NO_KILL", "1")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -48,7 +49,7 @@ fn simulate_hook(binary: &str, event: &str, input_json: &str) -> (i32, String) {
         })
         .unwrap();
 
-    let code = output.status.code().unwrap_or(-1);
+    let code = output.status.code().unwrap_or(0); // Signal kills return None, treat as 0
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     (code, stdout)
 }

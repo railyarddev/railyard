@@ -172,7 +172,7 @@ mod tests {
     use super::*;
     use crate::types::FenceConfig;
 
-    fn default_fence(cwd: &str) -> FenceConfig {
+    fn default_fence(_cwd: &str) -> FenceConfig {
         FenceConfig {
             enabled: true,
             allowed_paths: vec![],

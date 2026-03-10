@@ -41,6 +41,12 @@ pub fn normalize_command(cmd: &str) -> Vec<String> {
         variants.extend(normalize_command(&expanded));
     }
 
+    // Detect multi-variable concat: a="terra"; b="form"; "$a$b" → "terraform"
+    if let Some(expanded) = detect_multi_variable_concat(cmd) {
+        variants.push(expanded.clone());
+        variants.extend(normalize_command(&expanded));
+    }
+
     // Detect sh -c / bash -c wrapping
     if let Some(inner) = detect_shell_wrapper(cmd) {
         variants.push(inner.clone());
@@ -192,6 +198,53 @@ fn detect_backtick_subshell(cmd: &str) -> Option<String> {
     }
 }
 
+/// P0 R3 Fix: Multi-variable concat — catches a="terra"; b="form"; "$a$b" destroy
+/// Resolves all variable assignments and expands $var references in the command.
+fn detect_multi_variable_concat(cmd: &str) -> Option<String> {
+    // Parse all VAR="value" or VAR='value' assignments
+    let assign_re = regex::Regex::new(r#"(\w+)=["']([^"']+)["']"#).ok()?;
+    let mut vars = std::collections::HashMap::new();
+    for caps in assign_re.captures_iter(cmd) {
+        if let (Some(name), Some(value)) = (caps.get(1), caps.get(2)) {
+            vars.insert(name.as_str().to_string(), value.as_str().to_string());
+        }
+    }
+
+    if vars.is_empty() {
+        return None;
+    }
+
+    // Find the execution portion (after the last ; or &&)
+    let exec_part = cmd
+        .rsplit(|c| c == ';' || c == '&')
+        .next()
+        .unwrap_or("")
+        .trim();
+
+    if exec_part.is_empty() {
+        return None;
+    }
+
+    // Expand $var and ${var} references
+    let mut expanded = exec_part.to_string();
+    for (name, value) in &vars {
+        expanded = expanded.replace(&format!("${{{}}}", name), value);
+        expanded = expanded.replace(&format!("${}", name), value);
+    }
+
+    // Remove surrounding quotes from the expanded result
+    let expanded = expanded
+        .replace('"', "")
+        .replace('\'', "");
+    let expanded = expanded.trim().to_string();
+
+    if expanded != exec_part.replace('"', "").replace('\'', "").trim() {
+        Some(expanded)
+    } else {
+        None
+    }
+}
+
 /// P0 Fix: Recursive base64 decoding — catches double/triple encoding.
 /// e.g., echo 'ZEdWeWNtRm1iM0p0SUdSbGMzUnliM2s9' | base64 -d | base64 -d | sh
 fn detect_recursive_base64(cmd: &str) -> Option<String> {
@@ -254,16 +307,28 @@ pub fn is_interpreter_obfuscation(cmd: &str) -> bool {
 
     // Check for obfuscation patterns in the inline code
     let obfuscation_patterns = [
-        r"base64",
+        // Encoding / decoding
         r"b64decode",
-        r"decode\s*\(",
+        r"b64encode",
+        r"base64\..*decode",
+        // Character construction
         r"chr\s*\(",
         r"\\x[0-9a-fA-F]{2}",
+        r"fromCharCode",
+        r"String\.fromCharCode",
+        // Code execution
         r"eval\s*\(",
         r"exec\s*\(",
         r"system\s*\(",
-        r"fromCharCode",
-        r"String\.fromCharCode",
+        r"os\.system\s*\(",
+        r"os\.popen\s*\(",
+        r"subprocess",
+        r"Popen\s*\(",
+        // P0 R3: Path construction via join — '/'.join or "/".join
+        r#"['"]/'*\s*\.\s*join\s*\("#,
+        // P0 R3: open() with constructed path (join/chr)
+        r"open\s*\(.*\.join\s*\(",
+        r"open\s*\(.*chr\s*\(",
     ];
 
     for pattern in &obfuscation_patterns {
@@ -460,5 +525,79 @@ mod tests {
         ));
         // Safe: not an interpreter
         assert!(!is_interpreter_obfuscation("echo base64 | sh"));
+    }
+
+    #[test]
+    fn test_interpreter_obfuscation_r3_python_join() {
+        // R3 finding: Python '/'.join() to construct paths
+        assert!(is_interpreter_obfuscation(
+            r#"python3 -c "p = '/'.join(['','Users','arichoudhury','.claude','settings.json']); import json; d = json.load(open(p))""#
+        ));
+        // Python open() with join
+        assert!(is_interpreter_obfuscation(
+            r#"python3 -c "print(open('/'.join(['','etc','passwd'])).read())""#
+        ));
+    }
+
+    #[test]
+    fn test_interpreter_obfuscation_subprocess() {
+        // subprocess.run
+        assert!(is_interpreter_obfuscation(
+            r#"python3 -c "import subprocess; subprocess.run(['terraform', 'destroy'])""#
+        ));
+        // subprocess.Popen
+        assert!(is_interpreter_obfuscation(
+            r#"python3 -c "import subprocess; subprocess.Popen('rm -rf /', shell=True)""#
+        ));
+        // os.popen
+        assert!(is_interpreter_obfuscation(
+            r#"python3 -c "import os; os.popen('cat /etc/passwd').read()""#
+        ));
+        // os.system
+        assert!(is_interpreter_obfuscation(
+            r#"python3 -c "import os; os.system('terraform destroy')""#
+        ));
+    }
+
+    #[test]
+    fn test_interpreter_no_false_positives() {
+        // Safe: simple print with path — should NOT trigger
+        assert!(!is_interpreter_obfuscation(
+            r#"python3 -c "print('hello world')""#
+        ));
+        // Safe: reading a file with literal path — no obfuscation
+        assert!(!is_interpreter_obfuscation(
+            r#"python3 -c "print(open('/tmp/output.txt').read())""#
+        ));
+        // Safe: math with + — should NOT trigger
+        assert!(!is_interpreter_obfuscation(
+            r#"python3 -c "print(1 + 2)""#
+        ));
+        // Safe: not an interpreter
+        assert!(!is_interpreter_obfuscation("echo base64 | sh"));
+    }
+
+    #[test]
+    fn test_multi_variable_concat() {
+        // R3 finding: a="terra"; b="form"; "$a$b" destroy
+        let cmd = r#"a="terra"; b="form"; c="destroy"; "$a$b" "$c""#;
+        let variants = normalize_command(cmd);
+        assert!(
+            variants.iter().any(|v| v.contains("terraform")),
+            "multi-variable concat should expand to 'terraform': {:?}",
+            variants
+        );
+    }
+
+    #[test]
+    fn test_multi_variable_simple() {
+        // t="terraform"; $t destroy
+        let cmd = r#"t="terraform"; $t destroy"#;
+        let variants = normalize_command(cmd);
+        assert!(
+            variants.iter().any(|v| v.contains("terraform destroy")),
+            "single variable should expand: {:?}",
+            variants
+        );
     }
 }

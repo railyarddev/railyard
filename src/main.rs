@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 use colored::Colorize;
 use std::path::Path;
 
-use railyard::{configure, context, hook, install, policy, snapshot, trace};
+use railyard::{configure, context, hook, install, policy, sandbox, snapshot, trace};
 
 #[derive(Parser)]
 #[command(name = "railyard", version, about = "The runtime layer for AI agents in production")]
@@ -90,6 +90,28 @@ enum Commands {
 
     /// Interactive policy configuration (launches Claude Code)
     Chat,
+
+    /// OS-level sandbox management
+    Sandbox {
+        #[command(subcommand)]
+        action: SandboxAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum SandboxAction {
+    /// Generate sandbox profiles from railyard.yaml
+    Generate,
+
+    /// Run a command inside the OS-level sandbox
+    Run {
+        /// The command to sandbox
+        #[arg(trailing_var_arg = true)]
+        command: Vec<String>,
+    },
+
+    /// Show sandbox availability on this system
+    Status,
 }
 
 fn main() {
@@ -107,6 +129,7 @@ fn main() {
         Commands::Status => cmd_status(),
         Commands::Configure => configure::run_configure(),
         Commands::Chat => cmd_chat(),
+        Commands::Sandbox { action } => cmd_sandbox(action),
     };
 
     std::process::exit(exit_code);
@@ -483,6 +506,67 @@ Read the current railyard.yaml (if it exists) and help the user modify it based 
             eprintln!("  Alternatively, edit railyard.yaml manually.");
             eprintln!("  Run {} to generate a starter config.", "railyard init".cyan());
             1
+        }
+    }
+}
+
+fn cmd_sandbox(action: SandboxAction) -> i32 {
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let loaded_policy = policy::loader::load_policy_or_defaults(&cwd);
+
+    match action {
+        SandboxAction::Generate => {
+            println!("{}", "railyard sandbox generate".bold());
+            println!();
+            match sandbox::profile::generate_profiles(&loaded_policy, &cwd.display().to_string()) {
+                Ok(msg) => {
+                    println!("  {} {}", "✓".green().bold(), msg);
+                    0
+                }
+                Err(e) => {
+                    eprintln!("  {} {}", "✗".red().bold(), e);
+                    1
+                }
+            }
+        }
+
+        SandboxAction::Run { command } => {
+            if command.is_empty() {
+                eprintln!("  {} No command specified", "✗".red().bold());
+                eprintln!("  Usage: railyard sandbox run -- your-command");
+                return 1;
+            }
+            match sandbox::profile::run_sandboxed(
+                &loaded_policy,
+                &cwd.display().to_string(),
+                &command,
+            ) {
+                Ok(code) => code,
+                Err(e) => {
+                    eprintln!("  {} {}", "✗".red().bold(), e);
+                    1
+                }
+            }
+        }
+
+        SandboxAction::Status => {
+            println!("{}", "railyard sandbox status".bold());
+            println!();
+            let cap = sandbox::detect::detect_sandbox();
+            let desc = sandbox::detect::describe_capability(&cap);
+            let icon = match &cap {
+                sandbox::detect::SandboxCapability::None => "✗".yellow().bold(),
+                _ => "✓".green().bold(),
+            };
+            println!("  {} {}", icon, desc);
+
+            if loaded_policy.mode == "hardcore" {
+                println!();
+                println!("  Mode: {} (sandbox recommended)", "hardcore".red().bold());
+                println!("  Generate profiles: {}", "railyard sandbox generate".cyan());
+            }
+            println!();
+            0
         }
     }
 }

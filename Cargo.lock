@@ -638,6 +638,7 @@ dependencies = [
  "dirs",
  "glob",
  "hex",
+ "libc",
  "predicates",
  "regex",
  "serde",
