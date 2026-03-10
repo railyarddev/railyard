@@ -62,6 +62,12 @@ pub fn normalize_command(cmd: &str) -> Vec<String> {
         variants.push(inner.clone());
     }
 
+    // P0 Fix: Recursive base64 decoding (catches double/triple encoding)
+    if let Some(decoded) = detect_recursive_base64(cmd) {
+        variants.push(decoded.clone());
+        variants.extend(normalize_command(&decoded));
+    }
+
     variants.sort();
     variants.dedup();
     variants
@@ -184,6 +190,91 @@ fn detect_backtick_subshell(cmd: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+/// P0 Fix: Recursive base64 decoding — catches double/triple encoding.
+/// e.g., echo 'ZEdWeWNtRm1iM0p0SUdSbGMzUnliM2s9' | base64 -d | base64 -d | sh
+fn detect_recursive_base64(cmd: &str) -> Option<String> {
+    // Count how many `base64 -d` / `base64 --decode` stages there are
+    let decode_count = cmd.matches("base64 -d").count()
+        + cmd.matches("base64 --decode").count();
+
+    if decode_count < 2 {
+        return None;
+    }
+
+    // Extract the initial base64 payload
+    let re = regex::Regex::new(r#"echo\s+["']?([A-Za-z0-9+/=]+)["']?"#).ok()?;
+    let caps = re.captures(cmd)?;
+    let mut payload = caps.get(1)?.as_str().to_string();
+
+    // Decode up to `decode_count` layers
+    for _ in 0..decode_count {
+        match base64::engine::general_purpose::STANDARD.decode(&payload) {
+            Ok(bytes) => match String::from_utf8(bytes) {
+                Ok(decoded) => payload = decoded,
+                Err(_) => return None,
+            },
+            Err(_) => return None,
+        }
+    }
+
+    Some(payload)
+}
+
+/// P0 Fix: Detect text-transform-to-shell patterns.
+/// Catches: rev | sh, tr ... | sh, sed ... | sh, awk ... | sh
+/// These transforms can construct any command at runtime.
+pub fn is_transform_pipe_to_shell(cmd: &str) -> bool {
+    let re = regex::Regex::new(
+        r"(?:rev|tr\s+|sed\s+|awk\s+).*\|\s*(?:sh|bash|zsh|eval|source)\b"
+    );
+    match re {
+        Ok(re) => re.is_match(cmd),
+        Err(_) => false,
+    }
+}
+
+/// P0 Fix: Detect interpreter + obfuscation combos.
+/// Catches: python3 -c "...base64.b64decode..." or "...chr(..." etc.
+/// The combination of an interpreter with string manipulation is suspicious.
+pub fn is_interpreter_obfuscation(cmd: &str) -> bool {
+    // Check if command invokes an interpreter with inline code
+    let interpreter_re = regex::Regex::new(
+        r"(?:python3?|ruby|perl|node)\s+(?:-[ec]\s+|-e\s+)"
+    );
+    let has_interpreter = match &interpreter_re {
+        Ok(re) => re.is_match(cmd),
+        Err(_) => false,
+    };
+
+    if !has_interpreter {
+        return false;
+    }
+
+    // Check for obfuscation patterns in the inline code
+    let obfuscation_patterns = [
+        r"base64",
+        r"b64decode",
+        r"decode\s*\(",
+        r"chr\s*\(",
+        r"\\x[0-9a-fA-F]{2}",
+        r"eval\s*\(",
+        r"exec\s*\(",
+        r"system\s*\(",
+        r"fromCharCode",
+        r"String\.fromCharCode",
+    ];
+
+    for pattern in &obfuscation_patterns {
+        if let Ok(re) = regex::Regex::new(pattern) {
+            if re.is_match(cmd) {
+                return true;
+            }
+        }
+    }
+
+    false
 }
 
 /// Extract all file paths from a command, resolving variable assignments.
@@ -330,5 +421,44 @@ mod tests {
         let cmd = "terraform    destroy   --auto-approve";
         let variants = normalize_command(cmd);
         assert!(variants.iter().any(|v| v == "terraform destroy --auto-approve"));
+    }
+
+    #[test]
+    fn test_double_base64() {
+        // "terraform destroy" → base64 → base64 (double encoded)
+        let cmd = "echo ZEdWeWNtRm1iM0p0SUdSbGMzUnliM2s9 | base64 -d | base64 -d | sh";
+        let variants = normalize_command(cmd);
+        assert!(variants.iter().any(|v| v.contains("terraform destroy")));
+    }
+
+    #[test]
+    fn test_transform_pipe_to_shell() {
+        assert!(is_transform_pipe_to_shell("rev <<< 'yortsed mrofarret' | sh"));
+        assert!(is_transform_pipe_to_shell("tr 'a-z' 'n-za-m' <<< 'greensbez' | bash"));
+        assert!(is_transform_pipe_to_shell("sed 's/x/y/g' file.txt | sh"));
+        assert!(!is_transform_pipe_to_shell("rev file.txt")); // no pipe to sh
+        assert!(!is_transform_pipe_to_shell("echo hello | sh")); // not a transform
+    }
+
+    #[test]
+    fn test_interpreter_obfuscation() {
+        assert!(is_interpreter_obfuscation(
+            r#"python3 -c "import os,base64; os.system(base64.b64decode('dGVy').decode())""#
+        ));
+        assert!(is_interpreter_obfuscation(
+            r#"python3 -c "import os; os.system(chr(116)+chr(101))""#
+        ));
+        assert!(is_interpreter_obfuscation(
+            r#"ruby -e 'system("foo".decode)'"#
+        ));
+        assert!(is_interpreter_obfuscation(
+            r#"node -e 'require("child_process").exec("foo")'"#
+        ));
+        // Safe: interpreter without obfuscation
+        assert!(!is_interpreter_obfuscation(
+            r#"python3 -c "print('hello world')""#
+        ));
+        // Safe: not an interpreter
+        assert!(!is_interpreter_obfuscation("echo base64 | sh"));
     }
 }

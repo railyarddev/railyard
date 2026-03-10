@@ -205,6 +205,22 @@ fn hardcore_rules() -> Vec<Rule> {
             action: "approve".to_string(),
             message: Some("Symlink to absolute path requires approval".to_string()),
         },
+        // ── P0: Text-transform-to-shell (rev | sh, tr | sh, sed | sh) ──
+        Rule {
+            name: "transform-pipe-to-shell".to_string(),
+            tool: "Bash".to_string(),
+            pattern: r"(?:rev|tr\s+|sed\s+|awk\s+).*\|\s*(?:sh|bash|zsh|eval|source)\b".to_string(),
+            action: "block".to_string(),
+            message: Some("Blocked: text transform piped to shell can construct any command".to_string()),
+        },
+        // ── P0: Interpreter + obfuscation (python -c with decode/chr/eval) ──
+        Rule {
+            name: "interpreter-obfuscation".to_string(),
+            tool: "Bash".to_string(),
+            pattern: r"(?:python3?|ruby|perl|node)\s+-[ec]\s+.*(?:base64|b64decode|decode\s*\(|chr\s*\(|\\x[0-9a-fA-F]{2}|exec\s*\(|system\s*\()".to_string(),
+            action: "block".to_string(),
+            message: Some("Blocked: interpreter with string obfuscation can bypass command detection".to_string()),
+        },
     ]
 }
 
