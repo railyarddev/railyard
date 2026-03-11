@@ -5,7 +5,6 @@
 
 <p align="center">
   <a href="https://crates.io/crates/railroad-ai"><img src="https://img.shields.io/crates/v/railroad-ai.svg" alt="crates.io"></a>
-  <a href="https://crates.io/crates/railroad-ai"><img src="https://img.shields.io/crates/d/railroad-ai.svg" alt="Downloads"></a>
   <a href="https://github.com/railroad-dev/railroad/stargazers"><img src="https://img.shields.io/github/stars/railroad-dev/railroad?style=flat" alt="GitHub stars"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
   <img src="https://img.shields.io/badge/tests-151%20passed-brightgreen" alt="Tests">
