@@ -1,6 +1,6 @@
 [package]
 name = "railroad-ai"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 description = "The runtime layer for AI agents in production"
 license = "MIT"
