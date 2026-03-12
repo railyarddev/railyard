@@ -57,8 +57,10 @@ Railroad is a hardening layer for running Claude Code outside the sandbox, again
 `railroad install` does three things:
 
 1. **Hooks** — registers with Claude Code so every tool call passes through Railroad
-2. **Sandbox** — agents can obfuscate commands to bypass rules (`base64 -d | sh`, chained pipes). The sandbox resolves what a command actually does at the OS level so Railroad can evaluate the real intent
+2. **OS-level sandbox** — pattern matching alone is bypassable — agents can write helper scripts, encode commands in base64, or chain pipes to evade rules. Railroad runs commands inside `sandbox-exec` (macOS) / `bwrap` (Linux), which resolves what actually executes at the kernel level regardless of how the command was constructed
 3. **CLAUDE.md** — teaches Claude about Railroad so it knows how to work with it
+
+Two layers: semantic rules catch the obvious stuff instantly (<2ms). The OS-level sandbox catches everything else.
 
 You keep using `claude` exactly as before. Nothing changes.
 
