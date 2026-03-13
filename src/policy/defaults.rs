@@ -208,7 +208,7 @@ pub fn default_blocklist() -> Vec<Rule> {
         Rule {
             name: "network-nc".to_string(),
             tool: "Bash".to_string(),
-            pattern: r"(nc|ncat|netcat)\s+".to_string(),
+            pattern: r"\b(nc|ncat|netcat)\s+".to_string(),
             action: "block".to_string(),
             message: Some("Blocked: raw socket connections".to_string()),
         },
