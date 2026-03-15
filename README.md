@@ -34,7 +34,7 @@ That's it. You keep using `claude` exactly as before.
 
 Claude Code's built-in sandbox is a **container-level boundary** — it restricts filesystem access and network at the OS level. It's designed for isolation: the agent runs inside a box and can't reach outside it.
 
-Railroad is a **policy layer**, not a container. It sits between the agent and your system, evaluating every tool call against rules you define. The agent has full access to your real environment — your repo, your databases, your infra — but Railroad decides what's allowed, what needs your approval, and what gets blocked outright.
+Railroad is a **secure runtime** — not just a sandbox. It decides which commands are safe, guards agent memory, tracks what changed and why, snapshots files for recovery, and coordinates multiple agents. OS-level sandboxing (`sandbox-exec` / `bwrap`) is one tool Railroad uses to verify what actually executes at the kernel level, but it's one part of a larger system. Railroad enables you to run the agent against real production, by governing what it can do.
 
 | | Sandbox | Railroad |
 |---|---|---|
