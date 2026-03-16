@@ -24,7 +24,7 @@
 
 ## The problem
 
---dangerously-skip-permissions is all-or-nothing. Either you approve every tool call by hand, or the agent runs with zero restrictions. There's no middle ground.
+--dangerously-skip-permissions is all-or-nothing. Either you approve every tool call by hand, or Claude runs with zero restrictions. There's no middle ground.
 
 Railguard is the middle ground.
 
