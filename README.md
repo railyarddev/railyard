@@ -7,7 +7,7 @@
 </div>
 
 <p align="center">
-  <strong>Secure runtime for Claude Code.<br>The safer alternative to <code>--dangerously-skip-permissions</code>.</strong><br><br>
+  <strong>Hackable safety runtime for Claude Code.<br>You define the rules. Railguard enforces them.</strong><br><br>
   <a href="https://railguard.dev">railguard.dev</a>
 </p>
 
