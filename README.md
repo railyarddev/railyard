@@ -1,7 +1,17 @@
+<pre align="center">
+ _____       _ _                           _
+|  __ \     (_) |                         | |
+| |__) |__ _ _| | __ _ _   _  __ _ _ __ __| |
+|  _  // _` | | |/ _` | | | |/ _` | '__/ _` |
+| | \ \ (_| | | | (_| | |_| | (_| | | | (_| |
+|_|  \_\__,_|_|_|\__, |\__,_|\__,_|_|  \__,_|
+                  __/ |
+                 |___/
+</pre>
+
 <p align="center">
-  <h1 align="center">Railguard</h1>
-  <p align="center"><strong>Secure runtime for Claude Code.<br>The safer alternative to <code>--dangerously-skip-permissions</code>.</strong></p>
-  <p align="center"><a href="https://railguard.dev">railguard.dev</a></p>
+  <strong>Secure runtime for Claude Code.<br>The safer alternative to <code>--dangerously-skip-permissions</code>.</strong><br><br>
+  <a href="https://railguard.dev">railguard.dev</a>
 </p>
 
 <p align="center">
