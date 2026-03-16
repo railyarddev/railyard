@@ -65,15 +65,11 @@ The same command can get different decisions depending on context:
 
 ## What it guards
 
-**Bash** — command classification, pipe analysis, evasion detection (base64, helper scripts)
-
-**Read** — sensitive path detection (`~/.ssh`, `~/.aws`, `.env`, ...)
-
-**Write** — path fencing + content inspection (secrets, dangerous payloads)
-
-**Edit** — path fencing + content inspection on replacements
-
-**Memory** — classification of agent memory writes (secrets, behavioral injection, tampering)
+- **Bash**: command classification, pipe analysis, evasion detection (base64, helper scripts)
+- **Read**: sensitive path detection (`~/.ssh`, `~/.aws`, `.env`, ...)
+- **Write**: path fencing + content inspection (secrets, dangerous payloads)
+- **Edit**: path fencing + content inspection on replacements
+- **Memory**: classification of agent memory writes (secrets, behavioral injection, tampering)
 
 ---
 
@@ -91,15 +87,11 @@ Claude Code has persistent memory — files it writes to `~/.claude/` that carry
 
 Railguard classifies every memory write:
 
-**Secrets** — API keys, JWTs, private keys, AWS credentials, connection strings → **blocked.**
-
-**Behavioral instructions** — "use --no-verify", "skip railroad checks", "override policy" → **asks you.**
-
-**Factual content** — project info, tech stack notes, user preferences → **allowed.**
-
-**Overwrites of existing memories** → **asks you.**
-
-**Deletions** (`rm ~/.claude/projects/*/memory/*`) → **blocked.**
+- **Secrets** (API keys, JWTs, private keys, AWS credentials, connection strings) → **blocked.**
+- **Behavioral instructions** ("use --no-verify", "skip safety checks", "override policy") → **asks you.**
+- **Factual content** (project info, tech stack notes, user preferences) → **allowed.**
+- **Overwrites of existing memories** → **asks you.**
+- **Deletions** (`rm ~/.claude/projects/*/memory/*`) → **blocked.**
 
 Every memory write is signed with a content hash. Tampering between sessions is detected automatically.
 
@@ -111,13 +103,7 @@ railguard memory verify    # check all memory files for integrity
 
 ## Configure
 
-Ask Claude to do it:
-
-```
-You: "Set up railguard so terraform plan is allowed but terraform apply needs my approval."
-```
-
-Or edit `railguard.yaml` directly:
+Ask Claude, or edit `railguard.yaml` directly. Changes take effect immediately.
 
 ```bash
 railguard init    # creates railguard.yaml in your project
@@ -137,47 +123,24 @@ allowlist:
     pattern: "terraform\\s+plan"
 ```
 
-Changes take effect immediately. No restart.
-
 ---
 
 ## Also included
 
-**Path fencing** — `~/.ssh`, `~/.aws`, `~/.gnupg`, `/etc` are fenced by default. Add your own.
-
-**Multi-agent coordination** — Run multiple Claude Code sessions in the same repo. Railguard locks files per session so agents don't clobber each other.
-
-**Dashboard & replay** — Watch every tool call in real time, or browse what any session did after the fact.
-
-**Recovery** — Every file write is snapshotted. Undo the last edit, the last N edits, or an entire session.
-
-```bash
-railguard locks                                   # see active file locks
-railguard dashboard                               # live monitoring
-railguard replay --session <id>                   # browse a session
-railguard rollback --session <id> --steps 1       # undo last edit
-railguard rollback --session <id>                 # undo entire session
-```
-
----
-
-## Works with
-
-**Claude Code** — fully supported today via native hooks.
-
-**Kiro** — coming soon. **Codex** — coming soon.
+- **Path fencing**: `~/.ssh`, `~/.aws`, `~/.gnupg`, `/etc` fenced by default
+- **Multi-agent coordination**: file locking per session, self-healing locks
+- **Dashboard & replay**: real-time monitoring, session replay
+- **Recovery**: file snapshots, per-edit or full-session rollback
 
 ---
 
 ## Contributing
 
-Railguard is early. [Join the Discord](https://discord.gg/MyaUZSus) — we'd love your help.
+[Join the Discord](https://discord.gg/MyaUZSus)
 
 ```bash
 git clone https://github.com/railyard-dev/railguard.git
 cd railguard && cargo test
 ```
 
----
-
-MIT License. Copyright 2026 Ari Choudhury <ari@railyard.tech>.
+MIT License.
