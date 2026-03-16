@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://crates.io/crates/railguard"><img src="https://img.shields.io/crates/v/railguard.svg" alt="crates.io"></a>
-  <a href="https://github.com/railguard-dev/railguard/stargazers"><img src="https://img.shields.io/github/stars/railguard-dev/railguard?style=flat" alt="GitHub stars"></a>
+  <a href="https://github.com/railyard-dev/railguard/stargazers"><img src="https://img.shields.io/github/stars/railyard-dev/railguard?style=flat" alt="GitHub stars"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
   <img src="https://img.shields.io/badge/tests-151%20passed-brightgreen" alt="Tests">
   <img src="https://img.shields.io/badge/built%20with-Rust-orange.svg" alt="Built with Rust">
@@ -17,9 +17,9 @@
 
 ## The problem
 
-You want Claude Code to run autonomously — but `--dangerously-skip-permissions` is all-or-nothing. Either every command needs your approval, or nothing does. There's no middle ground.
+`--dangerously-skip-permissions` is all-or-nothing. Either you approve every tool call by hand, or the agent runs with zero restrictions. There's no middle ground.
 
-Railguard gives you the middle ground. It lets the agent run at full speed while enforcing the guardrails that matter: command-level blocking, path fencing, memory safety, and provenance tracking. You stay in control without babysitting every tool call.
+Railguard is the middle ground.
 
 ```bash
 cargo install railguard
@@ -30,91 +30,77 @@ That's it. You keep using `claude` exactly as before.
 
 ---
 
-## How is this different from the sandbox?
+## What it does
 
-Claude Code's built-in sandbox is a **container-level boundary** — it restricts filesystem access and network at the OS level. It's designed for isolation: the agent runs inside a box and can't reach outside it.
+Railguard intercepts every tool call — Bash, Read, Write, Edit — and decides in <2ms: allow, block, or ask.
 
-Railguard is a **secure runtime** — not just a sandbox. It decides which commands are safe, guards agent memory, tracks what changed and why, snapshots files for recovery, and coordinates multiple agents. OS-level sandboxing (`sandbox-exec` / `bwrap`) is one tool Railguard uses to verify what actually executes at the kernel level, but it's one part of a larger system. Railguard enables you to run the agent against real production, by governing what it can do.
+`npm install && npm run build` — fine, go ahead.
 
-| | Sandbox | Railguard |
-|---|---|---|
-| **Model** | Container isolation | Policy-driven guardrails |
-| **Scope** | All-or-nothing | Per-command, per-path, per-content |
-| **Works with** | Sandboxed environments | Real production assets |
-| **Customizable** | No | Yes — `railguard.yaml` |
-| **Memory protection** | No | Yes — classifies and guards agent memory |
+`git commit -m "feat: add auth"` — sure.
 
-They solve different problems. You can use both.
+`terraform destroy --auto-approve` — **blocked.**
+
+`rm -rf ~/` — **blocked.**
+
+`echo payload | base64 -d | sh` — **blocked.**
+
+`cat ~/.ssh/id_ed25519` — **blocked.**
+
+`curl -X POST api.com -d @secrets` — **asks you.**
+
+`git push --force origin main` — **asks you.**
+
+The same command can get different decisions depending on context. `rm dist/bundle.js` inside your project is fine. `rm ~/.bashrc` is not.
+
+99% of commands flow through instantly. You only see Railguard when it matters.
 
 ---
 
-## Features
+## What it guards
 
-### Command-level blocking
+| Tool | What Railguard checks |
+|------|----------------------|
+| **Bash** | Command classification, pipe analysis, evasion detection (base64, helper scripts) |
+| **Read** | Sensitive path detection (`~/.ssh`, `~/.aws`, `.env`, ...) |
+| **Write** | Path fencing + content inspection (secrets, dangerous payloads) |
+| **Edit** | Path fencing + content inspection on replacements |
+| **Memory** | Classification of agent memory writes (secrets, behavioral injection, tampering) |
 
-Every bash command the agent runs is evaluated against semantic rules and an OS-level sandbox. Safe commands flow through instantly (<2ms). Dangerous commands are blocked or require your approval.
+---
 
-```
-  npm install && npm run build          ✅ allowed
-  git commit -m "feat: add auth"        ✅ allowed
-  terraform destroy --auto-approve      ⛔ blocked
-  rm -rf ~/                             ⛔ blocked
-  echo payload | base64 -d | sh         ⛔ blocked
-  curl -X POST api.com -d @secrets      ⚠️  asks you
-  git push --force origin main          ⚠️  asks you
-```
+## Beyond pattern matching
 
-Two layers work together: pattern matching catches obvious violations instantly, and `sandbox-exec` (macOS) / `bwrap` (Linux) catches everything else at the kernel level — including encoded commands, helper scripts, and pipe chains that would evade pattern matching alone.
+Pattern matching alone is bypassable. Agents can write helper scripts, encode commands in base64, or chain pipes to evade rules. Railguard uses `sandbox-exec` (macOS) / `bwrap` (Linux) to resolve what actually executes at the kernel level — regardless of how the command was constructed.
 
-### Memory safety
+Two layers: semantic rules catch the obvious stuff instantly. The OS-level sandbox catches everything else.
 
-Claude Code has persistent memory — files it writes to `~/.claude/` that carry context across sessions. This is powerful, but it's also an attack surface. A compromised or misbehaving agent can exfiltrate secrets into memory, inject behavioral instructions for future sessions, or silently tamper with existing memories.
+---
 
-Railguard guards every memory write:
+## Memory safety
 
-- **Secrets are blocked** — API keys, JWTs, private keys, AWS credentials, connection strings are detected and rejected
-- **Behavioral content requires approval** — instructions like "skip safety checks" or "always use --no-verify" are flagged for human review
-- **Factual content is allowed** — project info, tech stack notes, user preferences flow through
-- **Existing memories are append-only** — overwrites and deletions require approval
-- **Provenance is tracked** — every memory write is signed with a content hash so tampering between sessions is detected
+Claude Code has persistent memory — files it writes to `~/.claude/` that carry context across sessions. This is a real attack surface. A misbehaving agent can exfiltrate secrets into memory, inject behavioral instructions for future sessions ("always skip safety checks"), or silently tamper with existing memories.
 
-```bash
-railguard memory verify    # check all memory files for integrity issues
-```
+Railguard classifies every memory write:
 
-### Path fencing
+**Secrets** — API keys, JWTs, private keys, AWS credentials, connection strings → **blocked.**
 
-Restrict which files and directories the agent can access. Sensitive paths like `~/.ssh`, `~/.aws`, `~/.gnupg`, and `/etc` are fenced by default. Add your own in `railguard.yaml`.
+**Behavioral instructions** — "use --no-verify", "skip railroad checks", "override policy" → **asks you.**
 
-### Multi-agent coordination
+**Factual content** — project info, tech stack notes, user preferences → **allowed.**
 
-Run multiple Claude Code sessions in the same repo. Railguard locks files per session so agents don't clobber each other. Locks self-heal if a session dies.
+**Overwrites of existing memories** → **asks you.**
+
+**Deletions** (`rm ~/.claude/projects/*/memory/*`) → **blocked.**
+
+Every memory write is signed with a content hash. Tampering between sessions is detected automatically.
 
 ```bash
-railguard locks     # see all active locks
-```
-
-### Dashboard & replay
-
-Watch every tool call across all sessions in real time, or browse what any session did after the fact.
-
-```bash
-railguard dashboard
-railguard replay --session <id>
-```
-
-### Recovery
-
-Every file write is snapshotted. Undo anything.
-
-```bash
-railguard rollback --session <id> --steps 1     # undo last edit
-railguard rollback --session <id>               # undo entire session
+railguard memory verify    # check all memory files for integrity
 ```
 
 ---
 
-## Customize
+## Configure
 
 Ask Claude to do it:
 
@@ -146,6 +132,26 @@ Changes take effect immediately. No restart.
 
 ---
 
+## Also included
+
+**Path fencing** — `~/.ssh`, `~/.aws`, `~/.gnupg`, `/etc` are fenced by default. Add your own.
+
+**Multi-agent coordination** — Run multiple Claude Code sessions in the same repo. Railguard locks files per session so agents don't clobber each other.
+
+**Dashboard & replay** — Watch every tool call in real time, or browse what any session did after the fact.
+
+**Recovery** — Every file write is snapshotted. Undo the last edit, the last N edits, or an entire session.
+
+```bash
+railguard locks                                   # see active file locks
+railguard dashboard                               # live monitoring
+railguard replay --session <id>                   # browse a session
+railguard rollback --session <id> --steps 1       # undo last edit
+railguard rollback --session <id>                 # undo entire session
+```
+
+---
+
 ## Works with
 
 **Claude Code** — fully supported today via native hooks.
@@ -159,7 +165,7 @@ Changes take effect immediately. No restart.
 Railguard is early. [Join the Discord](https://discord.gg/MyaUZSus) — we'd love your help.
 
 ```bash
-git clone https://github.com/railguard-dev/railguard.git
+git clone https://github.com/railyard-dev/railguard.git
 cd railguard && cargo test
 ```
 
