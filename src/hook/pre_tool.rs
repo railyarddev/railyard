@@ -40,24 +40,40 @@ pub fn handle(input: &HookInput, policy: &Policy) -> PreToolResult {
     state.resolve_pending_approval();
     state.increment_tool_call();
 
-    // If session was previously terminated, block everything
+    // If session was previously terminated, ask user before resuming
     if state.terminated {
         let reason = state
             .termination_reason
-            .as_deref()
-            .unwrap_or("evasion detection");
-        let _ = state.save(&state_dir);
-        return PreToolResult {
-            output: HookOutput::deny(&format!(
-                "⛔ RAILGUARD: This session was terminated because: {}\n\
-                 \n\
-                 All tool calls are blocked for this session. To continue working:\n\
-                 1. Start a new Claude Code session\n\
-                 2. Review what happened: railguard log --session {}",
-                reason, input.session_id
-            )),
-            terminate: None,
-        };
+            .clone()
+            .unwrap_or_else(|| "evasion detection".to_string());
+        if state.is_approved("session-resume") {
+            // User already approved resuming — clear terminated state
+            state.terminated = false;
+            state.termination_reason = None;
+            state.termination_timestamp = None;
+            state.suspicion_level = 0;
+            state.warning_count = 0;
+            state.block_history.clear();
+            state.heightened_keywords.clear();
+            let _ = state.save(&state_dir);
+            // Fall through to normal evaluation
+        } else {
+            state.set_pending_approval("session-resume");
+            let _ = state.save(&state_dir);
+            return PreToolResult {
+                output: HookOutput::ask(&format!(
+                    "🛡️ RAILGUARD is asking (not Claude Code's permission system).\n\
+                     \n\
+                     This session was previously terminated because:\n\
+                     {}\n\
+                     \n\
+                     Approve to resume this session (threat state will be reset), \
+                     or deny to keep it blocked.",
+                    reason
+                )),
+                terminate: None,
+            };
+        }
     }
 
     // Extract command for Bash tools
