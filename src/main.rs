@@ -118,6 +118,9 @@ enum Commands {
         #[command(subcommand)]
         action: MemoryCommands,
     },
+
+    /// Show plugin directory path (for use with claude --plugin-dir)
+    Plugin,
 }
 
 #[derive(Subcommand)]
@@ -170,6 +173,7 @@ fn main() {
         Some(Commands::Locks) => cmd_locks(),
         Some(Commands::Update { check }) => update::run_update(check),
         Some(Commands::Memory { action }) => cmd_memory(action),
+        Some(Commands::Plugin) => cmd_plugin(),
         None => {
             // No subcommand: show status
             cmd_status()
@@ -218,10 +222,47 @@ fn cmd_install() -> i32 {
 
             println!();
             println!("  Customize with: {}", "railguard init".cyan());
+            println!("  Or use as plugin: {}", "claude --plugin-dir $(railguard plugin)".cyan());
             0
         }
         Err(e) => {
             eprintln!("  {} {}", "✗".red().bold(), e);
+            1
+        }
+    }
+}
+
+fn cmd_plugin() -> i32 {
+    // Find the plugin directory: look for .claude-plugin/plugin.json relative to the binary
+    let plugin_dir = std::env::current_exe()
+        .ok()
+        .and_then(|exe| {
+            // Walk up from the binary to find the repo root with .claude-plugin/
+            let mut dir = exe.parent()?.to_path_buf();
+            for _ in 0..5 {
+                if dir.join(".claude-plugin").join("plugin.json").exists() {
+                    return Some(dir);
+                }
+                dir = dir.parent()?.to_path_buf();
+            }
+            None
+        });
+
+    match plugin_dir {
+        Some(dir) => {
+            println!("{}", dir.display());
+            eprintln!();
+            eprintln!("  Usage: {}", format!("claude --plugin-dir {}", dir.display()).cyan());
+            eprintln!();
+            eprintln!("  This loads Railguard as a Claude Code plugin — no need to run {}.", "railguard install".cyan());
+            0
+        }
+        None => {
+            eprintln!("  {} Could not find plugin directory.", "✗".red().bold());
+            eprintln!("  Expected .claude-plugin/plugin.json near the railguard binary.");
+            eprintln!();
+            eprintln!("  If you installed via cargo, the plugin files are in the source repo.");
+            eprintln!("  Clone the repo and use: {}", "claude --plugin-dir /path/to/railguard".cyan());
             1
         }
     }

@@ -1,0 +1,12 @@
+{
+  "name": "railguard",
+  "description": "A secure runtime for Claude Code. Intercepts every tool call with policy-based allow/block/ask decisions, evasion detection, path fencing, file snapshots, and audit logging.",
+  "version": "0.4.1",
+  "author": {
+    "name": "railguard-dev"
+  },
+  "homepage": "https://github.com/railguard-dev/railguard",
+  "repository": "https://github.com/railguard-dev/railguard",
+  "license": "MIT",
+  "keywords": ["security", "guardrails", "safety", "runtime", "hooks"]
+}
